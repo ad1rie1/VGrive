@@ -111,7 +111,13 @@ namespace App {
             this.main_path = main_path;
             File file = File.new_for_path(main_path);
             if (!file.query_exists()) {
-                file.make_directory();
+                try {
+                    file.make_directory();
+                } catch (Error e) {
+                    this.syncing = false;
+                    this.library = null;
+                    this.log_message (_("Error found on making directory, process stoped. Error message: ") + e.message);
+                }
             }
 
             if (trash_path == null) {
@@ -120,7 +126,13 @@ namespace App {
             this.trash_path = trash_path;
             file = File.new_for_path(trash_path);
             if (!file.query_exists()) {
-                file.make_directory();
+                try {
+                    file.make_directory();
+                } catch (Error e) {
+                    this.syncing = false;
+                    this.library = null;
+                    this.log_message (_("Error found on making trash directory, process stoped. Error message: ") + e.message);
+                }
             }
             // Init Soup Session
             this.get_current_session ();
@@ -171,16 +183,33 @@ namespace App {
                 this.log_message(_("Start syncing files on %s ").printf(this.main_path));
                 File maindir = File.new_for_path(this.main_path);
                 if (!maindir.query_exists()) {
-                    maindir.make_directory();
-                    this.log_message(_("Directory created: %s ").printf(this.main_path));
+                    try
+                    {
+                        maindir.make_directory();
+                        this.log_message(_("Directory created: %s ").printf(this.main_path));
+                    } catch (Error e) {
+                        this.log_message (_("Fail to Create Main directory. Error message: ") + e.message);
+                    }
                 }
                 File trashdir = File.new_for_path(this.trash_path);
-                if (!trashdir.query_exists()) trashdir.make_directory();
+                try
+                {
+                    if (!trashdir.query_exists()) {trashdir.make_directory();}
+                } catch (Error e) {
+                    this.log_message (_("Fail to Create Trashdir directory. Error message: ") + e.message);
+                }
+                
                 if (this.library == null) {
                     this.library = this.load_library();
                 }
                 // Start sync
-                this.thread = new Thread<int>.try ("Sync thread", this.sync_files);
+                try
+                {
+                    this.thread = new Thread<int>.try ("Sync thread", this.sync_files);
+                } catch (Error e) {
+                    this.log_message (_("Fail to start sync thread. Error message: ") + e.message);
+                }
+                
                 //GLib.Timeout.add_seconds (1, sync_files);
                 //this.sync_files ();
             }
@@ -389,11 +418,19 @@ namespace App {
 
                 foreach (string dir_to_watch in dirs_to_watch) {
                     new Thread<int>.try ("Watch %s thread".printf(dir_to_watch), () => {
-                        File dir_to_watch_file = File.new_for_path (dir_to_watch);
-                        FileMonitor monitor = dir_to_watch_file.monitor (FileMonitorFlags.WATCH_MOVES, null);
-                        monitor.changed.connect ((changed_file, other_file, event_type) => {
-                            if (this.is_regular_file (changed_file.query_info ("*", FileQueryInfoFlags.NONE))) this.change_detected = true;
-                        });
+                        try{
+                            File dir_to_watch_file = File.new_for_path (dir_to_watch);
+                            FileMonitor monitor = dir_to_watch_file.monitor (FileMonitorFlags.WATCH_MOVES, null);
+                            monitor.changed.connect ((changed_file, other_file, event_type) => {
+                                try{
+                                    if (this.is_regular_file (changed_file.query_info ("*", FileQueryInfoFlags.NONE))) this.change_detected = true;
+                                } catch (Error e) {
+                                    this.log_message (_("Error in watching local change. Error message: ") + e.message);
+                                }
+                            });
+                        } catch (Error e) {
+                            this.log_message (_("Error in lunching local change watching thread. Error message: ") + e.message);
+                        }
                         new MainLoop ().run ();
                         return 1;
                     });
@@ -451,7 +488,12 @@ namespace App {
             session.send_message (message);
             string res = (string) message.response_body.data;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Fail parse request credential page. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             // Check if we had an error
             if (json_response.get_member("error") != null) {
@@ -479,7 +521,13 @@ namespace App {
             var res = this.request_credentials (drive_code);
             if (res.code == 1) {
                 var parser = new Json.Parser ();
-                parser.load_from_data (res.message, -1);
+                try
+                {
+                    parser.load_from_data (res.message, -1);
+                } catch (Error e) {
+                    this.log_message (_("Fail parse request credential page. Error message: ") + e.message);
+                }
+                
                 Json.Object json_response = parser.get_root().get_object();
                 // Check if we had an error
                 if (json_response.get_member("error") != null) {
@@ -500,7 +548,13 @@ namespace App {
                             string dirpath = Environment.get_home_dir()+"/.vgrive";
                             file = File.new_for_path(dirpath);
                             if (!file.query_exists()) {
-                                file.make_directory();
+                                try
+                                {
+                                    file.make_directory();
+                                } catch (Error e) {
+                                    this.log_message (_("Fail to create credential local directory. Error message: ") + e.message);
+                                }
+                                
                             }
                         }
                         // store them in path
@@ -513,11 +567,16 @@ namespace App {
                                 print ("Error: %s\n", e.message);
                             }
                         }
-                        file.create(FileCreateFlags.NONE);
-                        FileIOStream io = file.open_readwrite();
-                        io.seek (0, SeekType.END);
-                        var writer = new DataOutputStream(io.output_stream);
-                        writer.put_string(res.message);
+                        try
+                        {
+                            file.create(FileCreateFlags.NONE);
+                            FileIOStream io = file.open_readwrite();
+                            io.seek (0, SeekType.END);
+                            var writer = new DataOutputStream(io.output_stream);
+                            writer.put_string(res.message);
+                        } catch (Error e) {
+                            this.log_message (_("Fail to create credential file. Error message: ") + e.message);
+                        }
                     }
                     return res;
                 }
@@ -548,12 +607,22 @@ namespace App {
             }
             string res = "";
             File file = File.new_for_path(path);
-            DataInputStream reader = new DataInputStream(file.read());
-            string line;
-            while ((line=reader.read_line(null)) != null) res = res.concat(line);
+            try {
+                DataInputStream reader = new DataInputStream(file.read());
+                string line;
+                while ((line=reader.read_line(null)) != null) res = res.concat(line);
+            } catch (Error e) {
+                this.log_message (_("Fail to read credential file. Error message: ") + e.message);
+            }
+            
             // parse credentials to get token and refresh token
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Fail to parse data from local credential file. Error message: ") + e.message);
+            }
             Json.Object root_obj = parser.get_root().get_object();
             this.access_token = root_obj.get_string_member("access_token");
             this.refresh_token = root_obj.get_string_member("refresh_token");
@@ -565,7 +634,11 @@ namespace App {
             if (path == null) path = Environment.get_home_dir()+"/.vgrive/credentials.json";
             if (this.has_local_credentials (path)) {
                 File file = File.new_for_path(path);
-                file.delete ();
+                try {
+                    file.delete ();
+                } catch (Error e) {
+                    this.log_message (_("Fail to delete credential file. Error message: ") + e.message);
+                }
             }
         }
 
@@ -703,8 +776,14 @@ namespace App {
             params[1] = {"q", q};
 
             string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
+            
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Error found on get remote dir info. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 stdout.printf("%s\n", res);
@@ -739,7 +818,12 @@ namespace App {
                 params2[1] = params[1];
                 params2[2] = {"pageToken", json_response.get_string_member("nextPageToken")};
                 res = this.make_request("GET", this.api_uri+"/files", params2, null, null, false).response;
-                parser.load_from_data (res, -1);
+                try
+                {
+                    parser.load_from_data (res, -1);
+                } catch (Error e) {
+                    this.log_message (_("Error found on get remote dir info. Error message: ") + e.message);
+                }
                 json_response = parser.get_root().get_object();
                 if (json_response.get_member("error") != null) {
                     stdout.printf("%s\n", res);
@@ -917,7 +1001,13 @@ namespace App {
 
             ResponseObject res2 = this.make_request("PUT", location, null, headers, file_content, true);
             var parser = new Json.Parser ();
-            parser.load_from_data (res2.response, -1);
+            try
+            {
+                parser.load_from_data (res2.response, -1);
+            } catch (Error e) {
+                this.log_message (_("Error found on request. Error message: ") + e.message);
+            }
+            
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 stdout.printf("%s\n", res2.response);
@@ -943,7 +1033,12 @@ namespace App {
 
             string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try {
+                parser.load_from_data (res, -1);
+            }catch (Error e) {
+                this.log_message (_("Unable to parse Data From request. Error message: ") + e.message);
+                return new DriveFile[0];
+            }
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 stdout.printf("%s\n%s\n", res, q);
@@ -977,7 +1072,12 @@ namespace App {
                 params[0] = {"q", q};
                 params[1] = {"pageToken", json_response.get_string_member("nextPageToken")};
                 res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
-                parser.load_from_data (res, -1);
+                try{
+                    parser.load_from_data (res, -1);
+                }catch (Error e) {
+                    this.log_message (_("Unable to parse Data From request. Error message: ") + e.message);
+                    return results[0:nfiles];
+                }
                 json_response = parser.get_root().get_object();
                 if (json_response.get_member("error") != null) {
                     stdout.printf("%s\n", res);
@@ -1035,7 +1135,12 @@ namespace App {
 
             string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Error found on get remote file info. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 stdout.printf("%s\n", res);
@@ -1067,7 +1172,12 @@ namespace App {
             params[0] = {"fields", fields};
             string res = this.make_request("GET", this.api_uri+"/files/"+file_id, params, null, null, false).response;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Error found on get remote file info. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 // Si tenim només un error, l'error es de tipus 400 i el problema està en el camp "fields", retornarem un DriveFile amb els camps buits i ja està
@@ -1150,7 +1260,12 @@ namespace App {
         public string request_page_token() throws ErrorGoogleDriveAPI {  // TODO
             string res = this.make_request("GET", this.api_uri+"/changes/startPageToken", null, null, null, false).response;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Fail to parse data from token page. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             return json_response.get_string_member("startPageToken");
         }
@@ -1161,7 +1276,12 @@ namespace App {
             params[0] = {"pageToken", pageToken};
             string res = this.make_request("GET", this.api_uri+"/changes", params, null, null, false).response;
             var parser = new Json.Parser ();
-            parser.load_from_data (res, -1);
+            try
+            {
+                parser.load_from_data (res, -1);
+            } catch (Error e) {
+                this.log_message (_("Fail to parse data from remote change request. Error message: ") + e.message);
+            }
             Json.Object json_response = parser.get_root().get_object();
             if (json_response.get_member("error") != null) {
                 stdout.printf("%s\n", res);
@@ -1179,7 +1299,12 @@ namespace App {
             while (changes_left) {
                 params[0] = {"pageToken", json_response.get_string_member("nextPageToken")};
                 res = this.make_request("GET", this.api_uri+"/changes", params, null, null, false).response;
-                parser.load_from_data (res, -1);
+                try
+                {
+                    parser.load_from_data (res, -1);
+                } catch (Error e) {
+                    this.log_message (_("Fail to parse data from remote change request. Error message: ") + e.message);
+                }
                 json_response = parser.get_root().get_object();
                 if (json_response.get_member("error") != null) {
                     stdout.printf("%s\n", res);
@@ -1210,27 +1335,47 @@ namespace App {
         // TODO: TEST
             File f = File.new_for_path(this.main_path+"/.vgrive_library");
             if (!f.query_exists()) {
-                f.create(FileCreateFlags.NONE);
+                try {
+                    f.create(FileCreateFlags.NONE);
+                } catch (Error e) {
+                    this.log_message (_("Creation of the Hashmap fail. Error message: ") + e.message);
+                    // Exit ? 
+                }
                 return new Gee.HashMap<string,string>();
             }
             else {
-                Gee.HashMap<string,string>? aux = new Gee.HashMap<string,string> ();
-                DataInputStream reader = new DataInputStream(f.read());
-                string line;
-                while ((line=reader.read_line(null)) != null) aux.set(line.split(";")[0], line.split(";")[1]);
-                return aux;
+                try {
+                    Gee.HashMap<string,string>? aux = new Gee.HashMap<string,string> ();
+                    DataInputStream reader = new DataInputStream(f.read());
+                    string line;
+                    while ((line=reader.read_line(null)) != null) aux.set(line.split(";")[0], line.split(";")[1]);
+                    return aux;
+                }catch (Error e) {
+                    this.log_message (_("Reading of the Hashmap file fail. Error message: ") + e.message);
+                    return new Gee.HashMap<string,string>();
+                    //EXIT ?
+                }
+                
             }
         }
 
         public void save_library() {
         // TODO: TEST
             File f = File.new_for_path(this.main_path+"/.vgrive_library");
-            if (f.query_exists()) f.delete();
-            f.create(FileCreateFlags.NONE);
-            FileIOStream io = f.open_readwrite();
-            var writer = new DataOutputStream(io.output_stream);
-            foreach (var entry in this.library.entries) {
-                writer.put_string("%s;%s\n".printf(entry.key, entry.value));
+            try{
+                if (f.query_exists()){f.delete();}
+            }catch (Error e) {
+                this.log_message (_("Unable to delete vgrive_library file. Error message: ") + e.message);
+            }
+            try{
+                f.create(FileCreateFlags.NONE);
+                FileIOStream io = f.open_readwrite();
+                var writer = new DataOutputStream(io.output_stream);
+                foreach (var entry in this.library.entries) {
+                    writer.put_string("%s;%s\n".printf(entry.key, entry.value));
+                }
+            }catch (Error e) {
+                this.log_message (_("Unable to create and save vgrive_library file. Error message: ") + e.message);
             }
         }
 
@@ -1300,14 +1445,24 @@ namespace App {
         // TODO: TEST
             File file = File.new_for_path(path+"/"+dfile.name);
             if (dfile.mimeType == "application/vnd.google-apps.folder") {
-                if (!file.query_exists()) file.make_directory();
+                try
+                {
+                    if (!file.query_exists()) file.make_directory();
+                } catch (Error e) {
+                    this.log_message (_("Fail to create local directory. Error message: ") + e.message);
+                }
             }
             else {
                 // It shouldn't exist, we checked it...
-                if (!file.query_exists()) file.create(FileCreateFlags.NONE);
-                FileIOStream io = file.open_readwrite();
-                var writer = new DataOutputStream(io.output_stream);
-                foreach (uint8 b in dfile.content) writer.put_byte(b);
+                try
+                {
+                    if (!file.query_exists()) file.create(FileCreateFlags.NONE);
+                    FileIOStream io = file.open_readwrite();
+                    var writer = new DataOutputStream(io.output_stream);
+                    foreach (uint8 b in dfile.content) writer.put_byte(b);
+                } catch (Error e) {
+                    this.log_message (_("Fail to create local file. Error message: ") + e.message);
+                }
             }
         }
 
@@ -1333,14 +1488,18 @@ namespace App {
             FileInfo info;
             File f = File.new_for_path(current_path);
             File auxf;
-            var enumerator = f.enumerate_children (FileAttribute.STANDARD_NAME, 0);
-            while ((info = enumerator.next_file ()) != null) {
-                if (info.get_file_type () == FileType.DIRECTORY) {
-                    this.empty_trash (current_path+"/"+info.get_name());
+            try {
+                var enumerator = f.enumerate_children (FileAttribute.STANDARD_NAME, 0);
+                while ((info = enumerator.next_file ()) != null) {
+                    if (info.get_file_type () == FileType.DIRECTORY) {
+                        this.empty_trash (current_path+"/"+info.get_name());
+                    }
+                    auxf = File.new_for_path(current_path+"/"+info.get_name());
+                    auxf.delete();
                 }
-                auxf = File.new_for_path(current_path+"/"+info.get_name());
-                auxf.delete();
-            }
+            } catch (Error e) {
+                this.log_message (_("Empty Trash Fail. Error message: ") + e.message);
+            } 
         }
 
         private string encode_uri(string param) {
@@ -1383,11 +1542,17 @@ namespace App {
             if (aux == null) {
                 //this.log_message("ERROR: No date for %s.".printf(filepath));
             }
-            File f = File.new_for_path(filepath);
-            FileInfo fileinfo = f.query_info ("*", FileQueryInfoFlags.NONE);
-            DateTime tv = new DateTime.from_iso8601(aux,null);
-            fileinfo.set_modification_date_time(tv);
-            f.set_attributes_from_info(fileinfo, FileQueryInfoFlags.NONE);
+            try
+            {
+                File f = File.new_for_path(filepath);
+                FileInfo fileinfo = f.query_info ("*", FileQueryInfoFlags.NONE);
+                DateTime tv = new DateTime.from_iso8601(aux,null);
+                fileinfo.set_modification_date_time(tv);
+                f.set_attributes_from_info(fileinfo, FileQueryInfoFlags.NONE);
+            } catch (Error e) {
+                this.log_message (_("Fail to file attribute. Error message: ") + e.message);
+            }
+            
         }
 
         public void move_local_file_to_trash(string filepath) {
@@ -1396,7 +1561,13 @@ namespace App {
             if (f.query_exists ()) {
                 DateTime dt = new DateTime.now_utc();
                 File dest = File.new_for_path(this.trash_path+"/"+dt.to_string()+"_"+filepath.split("/")[filepath.split("/").length-1]);
-                f.move(dest, FileCopyFlags.NONE);
+                
+                try{
+                    f.move(dest, FileCopyFlags.NONE);
+                }catch (Error e) {
+                    this.log_message (_("Unable to move file to trash. Error message: ") + e.message);
+                }
+                
             }
         }
 
@@ -1408,58 +1579,71 @@ namespace App {
                 drivefile == filepath -> 0
                 filepath is newest -> 1
             */
-            File lfile = File.new_for_path(filepath);
-            FileInfo fileinfo = lfile.query_info ("*", FileQueryInfoFlags.NONE);
-            DateTime lfile_wdate = fileinfo.get_modification_date_time();
+            try
+            {
+                File lfile = File.new_for_path(filepath);
+                FileInfo fileinfo = lfile.query_info ("*", FileQueryInfoFlags.NONE);
+                DateTime lfile_wdate = fileinfo.get_modification_date_time();
+                string year, month, day, hour, minutes, seconds,timezone;
+                string strtime = lfile_wdate.format_iso8601();
+                year =  strtime.split("-")[0];
+                month =  strtime.split("-")[1];
+                day =  strtime.split("-")[2].split("T")[0];
+                hour = strtime.split("T")[1].split(":")[0];
+                minutes = strtime.split("T")[1].split(":")[1];
+                seconds = strtime.split("T")[1].split(":")[2].substring(0, 2);
+                timezone = strtime.substring(strtime.last_index_of_char('Z'), 1);
+                DateTime local =  new DateTime (new TimeZone(timezone), int.parse(year), int.parse(month), int.parse(day), int.parse(hour), int.parse(minutes), double.parse(seconds));
 
-            string year, month, day, hour, minutes, seconds,timezone;
-            string strtime = lfile_wdate.format_iso8601();
-            year =  strtime.split("-")[0];
-            month =  strtime.split("-")[1];
-            day =  strtime.split("-")[2].split("T")[0];
-            hour = strtime.split("T")[1].split(":")[0];
-            minutes = strtime.split("T")[1].split(":")[1];
-            seconds = strtime.split("T")[1].split(":")[2].substring(0, 2);
-            timezone = strtime.substring(strtime.last_index_of_char('Z'), 1);
-            DateTime local =  new DateTime (new TimeZone(timezone), int.parse(year), int.parse(month), int.parse(day), int.parse(hour), int.parse(minutes), double.parse(seconds));
-
-            strtime = dfile_write_date;
-            year =  strtime.split("-")[0];
-            month =  strtime.split("-")[1];
-            day =  strtime.split("-")[2].split("T")[0];
-            hour = strtime.split("T")[1].split(":")[0];
-            minutes = strtime.split("T")[1].split(":")[1];
-            seconds = strtime.split("T")[1].split(":")[2].substring(0, 2);
-            timezone = strtime.substring(strtime.last_index_of_char('Z'), 1);
-            DateTime remote =  new DateTime (new TimeZone(timezone), int.parse(year), int.parse(month), int.parse(day), int.parse(hour), int.parse(minutes), double.parse(seconds));
-            return local.compare(remote);
+                strtime = dfile_write_date;
+                year =  strtime.split("-")[0];
+                month =  strtime.split("-")[1];
+                day =  strtime.split("-")[2].split("T")[0];
+                hour = strtime.split("T")[1].split(":")[0];
+                minutes = strtime.split("T")[1].split(":")[1];
+                seconds = strtime.split("T")[1].split(":")[2].substring(0, 2);
+                timezone = strtime.substring(strtime.last_index_of_char('Z'), 1);
+                DateTime remote =  new DateTime (new TimeZone(timezone), int.parse(year), int.parse(month), int.parse(day), int.parse(hour), int.parse(minutes), double.parse(seconds));
+                return local.compare(remote);
+            } catch (Error e) {
+                this.log_message (_("Fail to compare write times of files. Error message: ") + e.message);
+                // return 0 ==, select no file
+                return 0;
+            }
         }
 
         public string[] get_all_dirs(string path) {
         // TODO: TEST
-            File file =  File.new_for_path(path);
-            var enumerator = file.enumerate_children (FileAttribute.STANDARD_NAME, 0);
-            string[] dirs = new string[5];
-            dirs[0] = path;
-            int ndirs = 1;
-            FileInfo info;
-            string new_path;
-            string[] new_dirs;
-            while ((info = enumerator.next_file ()) != null) {
-                new_path = path+"/"+info.get_name();
-                if (info.get_file_type () == FileType.DIRECTORY && new_path.split("/")[new_path.split("/").length-1] != ".trash") {
-                    new_dirs = this.get_all_dirs(new_path);
-                    foreach (string new_dir in new_dirs) {
-                        dirs[ndirs] = new_dir;
-                        ndirs += 1;
-                        if (ndirs >= dirs.length) dirs.resize(ndirs*2);
+            try
+            {
+                File file =  File.new_for_path(path);
+                var enumerator = file.enumerate_children (FileAttribute.STANDARD_NAME, 0);
+                string[] dirs = new string[5];
+                dirs[0] = path;
+                int ndirs = 1;
+                FileInfo info;
+                string new_path;
+                string[] new_dirs;
+                while ((info = enumerator.next_file ()) != null) {
+                    new_path = path+"/"+info.get_name();
+                    if (info.get_file_type () == FileType.DIRECTORY && new_path.split("/")[new_path.split("/").length-1] != ".trash") {
+                        new_dirs = this.get_all_dirs(new_path);
+                        foreach (string new_dir in new_dirs) {
+                            dirs[ndirs] = new_dir;
+                            ndirs += 1;
+                            if (ndirs >= dirs.length) dirs.resize(ndirs*2);
+                        }
                     }
+                    if (ndirs >= dirs.length) dirs.resize(ndirs*2);
                 }
-                if (ndirs >= dirs.length) dirs.resize(ndirs*2);
+                return dirs[0:ndirs];
+            } catch (Error e) {
+                this.log_message (_("Error on listing dir. Error message: ") + e.message);
+                string[] dirs = new string[1];
+                dirs[0] = path;
+                return dirs[0:0];
             }
-            return dirs[0:ndirs];
         }
-
     }
 
 }

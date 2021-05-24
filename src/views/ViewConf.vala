@@ -258,7 +258,11 @@ namespace App.Views {
                     var file = File.new_for_path (path);
                     if (file.query_exists ()) {
                         info (file.get_uri ());
-                        files.show_items ({ file.get_uri () }, Constants.APP_NAME);
+                        try {
+                            files.show_items ({ file.get_uri () }, Constants.APP_NAME);
+                        } catch (Error e) {
+                            warning (_("Fail to show item on setting. Error message: ") + e.message);
+                        } 
                     }
                 } catch (IOError e) {
                     warning ("Unable to connect to FileManager1 interface to show file. Error: %s", e.message);

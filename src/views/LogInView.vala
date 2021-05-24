@@ -120,7 +120,11 @@ namespace App.Views {
 
         public void connect_signals(AppController controler) {
             open_w.clicked.connect (() => {
-                Gtk.show_uri_on_window (controler.window, controler.vgrive.get_auth_uri (), 10);
+                try {
+                    Gtk.show_uri_on_window (controler.window, controler.vgrive.get_auth_uri (), 10);
+                } catch (Error e) {
+                    warning(_("Fail to show uri on windows. Error message: ") + e.message);
+                } 
                 stack.set_visible_child_name ("step2_box");
 		    });
             grive_code.activate.connect (() => {
@@ -137,7 +141,7 @@ namespace App.Views {
                     Application.settings.set_string("sync-folder", this.selected_folder.get_label());
                     controler.vgrive.change_main_path(Application.settings.get_string("sync-folder"));
                 }
-                var res = controler.vgrive.request_and_set_credentials(grive_code.get_text());
+                controler.vgrive.request_and_set_credentials(grive_code.get_text());
                 this.update_view_on_hide (controler);
 		    });
 		    change_folder.clicked.connect(() => {
