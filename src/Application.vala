@@ -22,7 +22,7 @@ using App.Controllers;
 namespace App {
 
     public class Application : Gtk.Application {
-
+        public static GLib.Settings settings;
         public AppController controller;
 
         /**
@@ -33,6 +33,10 @@ namespace App {
                 application_id: Constants.ID,
                 flags: ApplicationFlags.FLAGS_NONE
             );
+        }
+        
+        static construct {
+            settings = new GLib.Settings (Constants.ID);
         }
 
         construct {
