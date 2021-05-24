@@ -23,7 +23,6 @@ namespace App.Views {
             mainbox.column_spacing = 12;
             mainbox.row_spacing = 6;
             // Create elements to put inside the box
-            //Gtk.Box title_box = this.build_title(controler);
             log_box = this.build_log(controler);
             simple_view_box = this.build_simple_view_box(controler);
             Gtk.Box start_stop_box = this.build_start_stop_buttons(controler);
@@ -76,14 +75,6 @@ namespace App.Views {
             var boxc = new Gtk.Box(Orientation.VERTICAL, 0);
             boxc.set_center_widget (box);
             return boxc;
-        }
-
-        private Gtk.Box build_title(AppController controler) {
-            Gtk.Label title_lbl = new Gtk.Label(_("Google Drive Sync"));
-            title_lbl.get_style_context().add_class ("sync_title");
-            var box = new Gtk.Box(Orientation.VERTICAL, 0);
-		    box.pack_start (title_lbl, false, false, 0);
-            return box;
         }
 
         private Gtk.Box build_start_stop_buttons(AppController controler) {
