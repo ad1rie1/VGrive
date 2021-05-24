@@ -1385,9 +1385,8 @@ namespace App {
             }
             File f = File.new_for_path(filepath);
             FileInfo fileinfo = f.query_info ("*", FileQueryInfoFlags.NONE);
-            TimeVal tv = TimeVal();
-            tv.from_iso8601(aux);
-            fileinfo.set_modification_time(tv);
+            DateTime tv = new DateTime.from_iso8601(aux,null);
+            fileinfo.set_modification_date_time(tv);
             f.set_attributes_from_info(fileinfo, FileQueryInfoFlags.NONE);
         }
 
@@ -1411,10 +1410,10 @@ namespace App {
             */
             File lfile = File.new_for_path(filepath);
             FileInfo fileinfo = lfile.query_info ("*", FileQueryInfoFlags.NONE);
-            TimeVal lfile_wdate = fileinfo.get_modification_time();
+            DateTime lfile_wdate = fileinfo.get_modification_date_time();
 
             string year, month, day, hour, minutes, seconds,timezone;
-            string strtime = lfile_wdate.to_iso8601();
+            string strtime = lfile_wdate.format_iso8601();
             year =  strtime.split("-")[0];
             month =  strtime.split("-")[1];
             day =  strtime.split("-")[2].split("T")[0];
