@@ -1345,7 +1345,7 @@ namespace App {
 
         private string encode_uri(string param) {
             string aux = Soup.URI.encode(param, null);
-            return param;
+            return aux;
         }
 
         public string encode_for_q(string param) {
