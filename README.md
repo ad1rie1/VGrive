@@ -73,6 +73,9 @@ Install the 'build' pre-requisites ( eg on ubuntu, something like this ):
 - sudo apt install libunity-dev (optional)
 - sudo apt install libappindicator3-dev (optional)
 
+Install the 'build' pre-requisites ( eg on Fedora, something like this ):
+dnf install meson vala gtk3-devel granite-devel json-glib-devel libsoup-devel libunity-devel libappindicator-gtk3-devel
+
 Install your application with the following commands:
 - meson build --prefix=/usr
 - cd build
