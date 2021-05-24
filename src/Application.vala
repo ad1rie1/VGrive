@@ -34,7 +34,7 @@ namespace App {
                 flags: ApplicationFlags.FLAGS_NONE
             );
         }
-        
+
         static construct {
             settings = new GLib.Settings (Constants.ID);
         }
@@ -46,7 +46,6 @@ namespace App {
             });
 
             add_action (quit_action);
-            string[] accel_quit = {"<Control>q", "0"};
             set_accels_for_action ("app.quit", { "<Control>q" });
         }
 
