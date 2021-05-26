@@ -103,8 +103,8 @@ namespace App {
             Application.settings.set_int ("window-width", aux1);
             Application.settings.set_int ("window-height", aux2);
             this.get_position (out aux1, out aux2);
-            Application.settings.set_int ("window_posx", aux1);
-            Application.settings.set_int ("window_posy", aux2);
+            Application.settings.set_int ("window-posx", aux1);
+            Application.settings.set_int ("window-posy", aux2);
             if (this.is_maximized) Application.settings.set_int ("window_state", 1);
             else Application.settings.set_int ("window_state", 0);
             return false;
