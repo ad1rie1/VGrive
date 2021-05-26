@@ -29,11 +29,9 @@ namespace App.Controllers {
         public App.Application application;
         public AppWindow window;
         public ViewController view_controller;
+        public AppIndicator.Indicator indicator;
 #if LIBUNITY
         public Unity.LauncherEntry launcher;
-#endif
-#if LIBAPPINDICATOR
-        public AppIndicator.Indicator indicator;
 #endif
 
         public App.VGriveClient vgrive;
@@ -86,8 +84,6 @@ namespace App.Controllers {
 
         private void setup_indicator () {
             print ("INFO: Setting up Indicator\n");
-#if LIBAPPINDICATOR
-            print ("INFO: Indicator aviable\n");
 		    this.indicator = new AppIndicator.Indicator ("VGrive", "com.github.bcedu.vgrive", AppIndicator.IndicatorCategory.APPLICATION_STATUS);
             this.indicator.set_status(AppIndicator.IndicatorStatus.ACTIVE);
 
@@ -109,7 +105,6 @@ namespace App.Controllers {
 
 		    this.indicator.set_menu(menu);
             print ("INFO: Indicator running\n");
-#endif
         }
 
         public void quit () {
