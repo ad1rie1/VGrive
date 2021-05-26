@@ -673,12 +673,11 @@ namespace App {
                 foreach (RequestParam param in params_list) {
                     if (is_first) {
                         is_first = false;
-                        uri_auth = uri_auth.concat("?", param.field_name, "=", param.field_value);
+                        uri_auth = uri_auth.concat("?", param.field_name, "=", encode_uri(param.field_value));
                     }
-                    else uri_auth = uri_auth.concat("&", param.field_name, "=", param.field_value);
+                    else uri_auth = uri_auth.concat("&", param.field_name, "=", encode_uri(param.field_value));
                 }
             }
-            uri_auth = encode_uri(uri_auth);
             var message = new Soup.Message (method, uri_auth);
             string res;
             uint8[] bres;
@@ -719,7 +718,6 @@ namespace App {
                         if (json_response.get_member("access_token") != null) {
                             // Retry request with new token
                             this.access_token = json_response.get_string_member("access_token");
-                            uri_auth = encode_uri(uri_auth);
                             //stdout.printf("Retrying request: %s %s\n", method, uri_auth);
                             message = new Soup.Message (method, uri_auth);
                             if (!without_acces_token) message.request_headers.append("Authorization", "Bearer %s".printf(this.access_token));
