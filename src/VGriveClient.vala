@@ -402,63 +402,87 @@ namespace App {
             
             if (!this.is_syncing ()) return;
             try {
-            var directory = File.new_for_path (current_path);
-            bool has_in_lib = false;
-            var enumerator = directory.enumerate_children (FileAttribute.STANDARD_NAME, 0);
-            FileInfo info;
-            DriveFile remote_file, new_remote_file;
-            
-            while ((info = enumerator.next_file ()) != null) {
-                if (!this.is_syncing ()) return;
-                var it = this.library.map_iterator ();
-                
-                if (this.is_regular_file(info)) {
-                    remote_file = this.get_file_info(info.get_name(), root_id, -1);
 
-                    if(remote_file.id == null){
-                        for (var has_next = it.next (); has_next; has_next = it.next ()) {
-                            if(it.get_value() == current_path+"/"+info.get_name()){
-                                has_in_lib = true;
+                DriveFile[] res = this.list_files(-1, root_id, -1);
+
+                var directory = File.new_for_path (current_path);
+                bool has_in_lib = false;
+                var enumerator = directory.enumerate_children (FileAttribute.STANDARD_NAME, 0);
+                FileInfo info;
+                DriveFile remote_file = DriveFile();
+                DriveFile new_remote_file;
+                
+                bool find = false;
+                while ((info = enumerator.next_file ()) != null) {
+                    if (!this.is_syncing ()) return;
+                    find = false;
+                    remote_file = DriveFile();
+                    if (this.is_regular_file(info)) 
+                    {
+                        // Verify that file is present in cloud and local
+                        foreach (DriveFile f in res) {
+                            if(info.get_name() == f.name)
+                            {
+                                find = true;
+                                remote_file = f;
                                 break;
                             }
                         }
-                    }
-
-                    // If file is not listed in the library, should be a new file, so sync it. Otherwise should be a deleted file, so delete it.
-                    if(!has_in_lib){
-                        if (info.get_file_type () == FileType.DIRECTORY) {
-                            if (remote_file.id == null) {
-                                // Create DIR
-                                this.log_message(_("NEW LOCAL DIRECTORY: %s uploading...").printf(info.get_name()));
-                                remote_file = this.upload_new_local_dir(current_path+"/"+info.get_name(), root_id);
-                                this.log_message(_("NEW LOCAL DIRECTORY: %s uploaded ✓").printf(remote_file.name));
-                            } else {
-                                this.log_message(_("INFO: %s not changed").printf(remote_file.name), 0);
-                            }
-
-                            // Set the file in the library with this notation: file.id;file.local.path/filename
-                            new_remote_file = this.get_file_info(info.get_name(), root_id, -1);
-                            this.library.set(new_remote_file.id, current_path+"/"+info.get_name());
-
-                            this.check_local_files(current_path+"/"+info.get_name(), remote_file.id);
-                        } else {
-                            if (remote_file.id == null) {
-                                // Create File
-                                remote_file = this.upload_new_local_file(current_path+"/"+info.get_name(), root_id);
+                        // Verify the file is present in library if remote
+                        if(remote_file.id != null)
+                        {
+                            var it = this.library.map_iterator ();
+                            for (var has_next = it.next (); has_next; has_next = it.next ()) {
+                                if(it.get_value() == current_path+"/"+info.get_name()){
+                                    has_in_lib = true;
+                                    break;
+                                }
                             }
                         }
-                    } else if (has_in_lib && remote_file.id != null) {
-                        // Detect if the local version is newer than the remote one.
-                        // If it's the case, upload local one
-                        DriveFile extra_info_file = this.get_file_info_extra(remote_file.id, "modifiedTime");
-                        if (this.compare_files_write_time(extra_info_file.modifiedTime, current_path+"/"+remote_file.name) == 1) {
-                            this.upload_local_file_update(current_path+"/"+info.get_name(), remote_file.id);
-                        } else this.log_message(_("INFO: %s not changed").printf(remote_file.name), 0);
-                    } else {
-                        delete_files("LOCAL", info.get_name(), current_path);
+                    
+                    
+                        // If file is not listed in the library, should be a new file, so sync it. Otherwise should be a deleted file, so delete it.
+                        if(!has_in_lib){
+                            if (info.get_file_type () == FileType.DIRECTORY) {
+                                if (remote_file.id == null) {
+                                    // Create DIR
+                                    this.log_message(_("NEW LOCAL DIRECTORY: %s uploading...").printf(info.get_name()));
+                                    remote_file = this.upload_new_local_dir(current_path+"/"+info.get_name(), root_id);
+                                    this.log_message(_("NEW LOCAL DIRECTORY: %s uploaded ✓").printf(remote_file.name));
+                                } else {
+                                    this.log_message(_("INFO: %s not changed").printf(remote_file.name), 0);
+                                }
+
+                                // Set the file in the library with this notation: file.id;file.local.path/filename
+                                new_remote_file = this.get_file_info(info.get_name(), root_id, -1);
+                                this.library.set(new_remote_file.id, current_path+"/"+info.get_name());
+
+                                this.check_local_files(current_path+"/"+info.get_name(), remote_file.id);
+                            } else {
+                                if (remote_file.id == null) {
+                                    // Create File
+                                    remote_file = this.upload_new_local_file(current_path+"/"+info.get_name(), root_id);
+                                }
+                            }
+                        } else if (has_in_lib && remote_file.id != null) {
+                            // Detect if the local version is newer than the remote one.
+                            // If it's the case, upload local one
+                            if(info.get_file_type () != FileType.DIRECTORY)
+                            {
+                                if (this.compare_files_write_time(remote_file.modifiedTime, current_path+"/"+remote_file.name) == 1) {
+                                    this.upload_local_file_update(current_path+"/"+info.get_name(), remote_file.id);
+                                } else this.log_message(_("INFO: %s not changed").printf(remote_file.name), 0);
+                            }
+                            else
+                            {
+                                this.check_local_files(current_path+"/"+info.get_name(), remote_file.id);
+                            }
+                            
+                        } else {
+                            delete_files("LOCAL", info.get_name(), current_path);
+                        }
                     }
                 }
-            }
 
             } catch (Error e) {
                 stderr.printf ("Error: %s\n", e.message);
@@ -816,7 +840,7 @@ namespace App {
               * mimeType
               * parent_id
         */
-            RequestParam[] params = new RequestParam[2];
+            RequestParam[] params = new RequestParam[3];
 
             int pageSize = 1000;
             if (number > -1 && number <= 1000) pageSize = number;
@@ -828,7 +852,7 @@ namespace App {
             if (trashed < 0) q = q.concat(" and trashed = False");
             else if (trashed > 0) q = q.concat(" and trashed = True");
             params[1] = {"q", q};
-
+            params[2] = {"fields", "files/id, files/name, files/mimeType, files/modifiedTime"};
             string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
             
             var parser = new Json.Parser ();
@@ -850,7 +874,7 @@ namespace App {
             foreach (unowned Json.Node item in json_files.get_elements ()) {
                 obj = item.get_object ();
                 results[nfiles] = {
-                    obj.get_string_member("kind"), // kind
+                    (obj.has_member ("kind")) ? obj.get_string_member("kind") : "",
                     obj.get_string_member("id"), // id
                     obj.get_string_member("name"), // name
                     "".data, // content
