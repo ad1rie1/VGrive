@@ -32,7 +32,7 @@ if libunity_dep.found()
     deps += [libunity_dep]
 endif
 
-libappindicator_dep = dependency('appindicator3-0.1', required : false)
+libappindicator_dep = dependency('appindicator3-0.1', required : true)
 if libappindicator_dep.found()
     add_project_arguments('-D', 'LIBAPPINDICATOR', language: 'vala')
     deps += [libappindicator_dep]
