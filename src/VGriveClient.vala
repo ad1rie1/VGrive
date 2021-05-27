@@ -267,24 +267,20 @@ namespace App {
         public bool process_changes() {
         // TODO: TEST
             if (this.is_syncing ()) {
-                try {
-                    if(localChangeDetected)
-                    {
-                        this.log_message(_("Local Change detected. Updating files..."));
-                        this.check_local_files (this.main_path);
-                    }
-                    if(remoteChangeDetected)
-                    {
-                        this.log_message(_("Remote Change detected. Updating files..."));
-                        this.check_remote_files (this.main_path);
-                    }
 
-                    this.log_message (_("Everything is up to date!"));
-                } catch (Error e) {
-                    this.syncing = false;
-                    this.library = null;
-                    this.log_message (_("Error found, process stoped. Error message: ") + e.message);
+                if(localChangeDetected)
+                {
+                    this.log_message(_("Local Change detected. Updating files..."));
+                    this.check_local_files (this.main_path);
                 }
+                if(remoteChangeDetected)
+                {
+                    this.log_message(_("Remote Change detected. Updating files..."));
+                    this.check_remote_files (this.main_path);
+                }
+
+                this.log_message (_("Everything is up to date!"));
+                
                 return true;
             }else {
                 return false;
@@ -364,56 +360,63 @@ namespace App {
             {
                 res = this.list_files(-1, root_id, -1);
             } catch (Error e) {
+                this.syncing = false;
                 this.log_message (_("Error Unable to retrieve remote file. Error message: ") + e.message);
                 return;
             }
             
-        
-            foreach (DriveFile f in res) {
-                //Quit if syncing stop
-                if (!this.is_syncing ()) return;
-                
-                // If file is not listed in the library, should be a new file, so sync it. Otherwise should be a deleted file, so delete it.
-                if(!this.library.has_key(f.id)){                    
-                    if (f.mimeType == "application/vnd.google-apps.folder") {
-                        // Check if this file is a folder, then create if doesn't exist
-                        if (!this.local_file_exists(current_path+"/"+f.name)) {
-                            this.log_message(_("NEW REMOTE DIRECTORY: %s downloading...").printf(f.name), 0);
-                            this.create_local_file(f, current_path);
-                            this.log_message(_("NEW REMOTE DIRECTORY: %s downloaded ✓").printf(f.name), 0);
-                            
-                            // Set the folder in the library with this notation: folder.id;folder.local.path/filename
-                            this.library.set(f.id, current_path+"/"+f.name);
+            try
+            {
+                foreach (DriveFile f in res) {
+                    //Quit if syncing stop
+                    if (!this.is_syncing ()) return;
+                    
+                    // If file is not listed in the library, should be a new file, so sync it. Otherwise should be a deleted file, so delete it.
+                    if(!this.library.has_key(f.id)){                    
+                        if (f.mimeType == "application/vnd.google-apps.folder") {
+                            // Check if this file is a folder, then create if doesn't exist
+                            if (!this.local_file_exists(current_path+"/"+f.name)) {
+                                this.log_message(_("NEW REMOTE DIRECTORY: %s downloading...").printf(f.name), 0);
+                                this.create_local_file(f, current_path);
+                                this.log_message(_("NEW REMOTE DIRECTORY: %s downloaded ✓").printf(f.name), 0);
+                                
+                                // Set the folder in the library with this notation: folder.id;folder.local.path/filename
+                                this.library.set(f.id, current_path+"/"+f.name);
+                            }
+                            // Check files inside the folder
+                            this.check_remote_files(current_path+"/"+f.name, f.id);
+                        } else if(this.is_google_mime_type (f.mimeType)){
+                            // It's a google document. We don't want to download them
+                            this.log_message(_("INFO: %s ignored").printf(f.name), 0);
+                        } else {
+                            // It's a file. Download it if it doesn't exist
+                            if (!this.local_file_exists(current_path+"/"+f.name)) {
+                                this.download_new_remote_file(f, current_path);
+                                
+                                // Set the file in the library with this notation: file.id;file.local.path/filename
+                                this.library.set(f.id, current_path+"/"+f.name);
+                            }
                         }
-                        // Check files inside the folder
-                        this.check_remote_files(current_path+"/"+f.name, f.id);
-                    } else if(this.is_google_mime_type (f.mimeType)){
-                        // It's a google document. We don't want to download them
-                        this.log_message(_("INFO: %s ignored").printf(f.name), 0);
+                    } else if (this.library.has_key(f.id) && this.local_file_exists(current_path+"/"+f.name)) {
+                        // Detect if the remote version is newer than the local one.
+                        // If it's the case, move the local versio to .trash and download remote
+                        DriveFile extra_info_file = this.get_file_info_extra(f.id, "modifiedTime");
+                        if (this.compare_files_write_time(extra_info_file.modifiedTime, current_path+"/"+f.name) == -1) {
+                            this.log_message(_("FILE MODIFIED REMOTELY: %s updating...").printf(f.name), 0);
+                            this.download_new_version_remote_file(f, current_path);
+                            this.log_message(_("FILE MODIFIED REMOTELY: %s updated ✓").printf(f.name), 0);
+                        } else this.log_message(_("INFO: %s not changed").printf(f.name), 0);
                     } else {
-                        // It's a file. Download it if it doesn't exist
-                        if (!this.local_file_exists(current_path+"/"+f.name)) {
-                            this.download_new_remote_file(f, current_path);
-                            
-                            // Set the file in the library with this notation: file.id;file.local.path/filename
-                            this.library.set(f.id, current_path+"/"+f.name);
-                        }
+                        delete_files("REMOTE", f.id, current_path);
                     }
-                } else if (this.library.has_key(f.id) && this.local_file_exists(current_path+"/"+f.name)) {
-                    // Detect if the remote version is newer than the local one.
-                    // If it's the case, move the local versio to .trash and download remote
-                    DriveFile extra_info_file = this.get_file_info_extra(f.id, "modifiedTime");
-                    if (this.compare_files_write_time(extra_info_file.modifiedTime, current_path+"/"+f.name) == -1) {
-                        this.log_message(_("FILE MODIFIED REMOTELY: %s updating...").printf(f.name), 0);
-                        this.download_new_version_remote_file(f, current_path);
-                        this.log_message(_("FILE MODIFIED REMOTELY: %s updated ✓").printf(f.name), 0);
-                    } else this.log_message(_("INFO: %s not changed").printf(f.name), 0);
-                } else {
-                    delete_files("REMOTE", f.id, current_path);
                 }
+                this.save_library ();
+            } catch (Error e) {
+                this.syncing = false;
+                this.log_message (_("Error Unable to check remote file. Error message: ") + e.message);
+                return;
             }
-            this.save_library ();
-        }
+        }   
 
         private void check_local_files (string current_path, string root_id="") {
             /*
@@ -509,6 +512,7 @@ namespace App {
                 }
 
             } catch (Error e) {
+                this.syncing = false;
                 stderr.printf ("Error: %s\n", e.message);
             }
             this.save_library ();
@@ -1465,7 +1469,9 @@ namespace App {
         }
 
         public void save_library() {
-        // TODO: TEST
+            //Add Guard because in case of error, this.library == null
+            if(this.library == null) return;
+
             File f = File.new_for_path(this.main_path+"/.vgrive_library");
             try{
                 if (f.query_exists()){f.delete();}
