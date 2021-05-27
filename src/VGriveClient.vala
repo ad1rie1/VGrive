@@ -1622,11 +1622,9 @@ namespace App {
             }
             try
             {
-                File f = File.new_for_path(filepath);
-                FileInfo fileinfo = f.query_info ("*", FileQueryInfoFlags.NONE);
                 DateTime tv = new DateTime.from_iso8601(aux,null);
-                fileinfo.set_modification_date_time(tv);
-                f.set_attributes_from_info(fileinfo, FileQueryInfoFlags.NONE);
+                File f = File.new_for_path(filepath);
+                f.set_attribute_uint64(FileAttribute.TIME_MODIFIED, tv.to_unix() , FileQueryInfoFlags.NONE);
             } catch (Error e) {
                 this.log_message (_("Fail to file attribute. Error message: ") + e.message);
             }
