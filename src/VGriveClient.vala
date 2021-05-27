@@ -95,7 +95,9 @@ namespace App {
         public string main_path;
         public string trash_path;
         public bool syncing = false;
-        public bool change_detected = false;
+        public bool syncing_in_progress = false;
+        public bool localChangeDetected = false;
+        public bool remoteChangeDetected = false;
         public int changes_check_period = 10;
         public Gee.HashMap<string,string>? library;
         public string google_error_msg = """<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"/><title>Sorry...</title><style> body { font-family: verdana, arial, sans-serif; background-color: #fff; color: #000; }</style></head><body><div><table><tr><td><b><font face=sans-serif size=10><font color=#4285f4>G</font><font color=#ea4335>o</font><font color=#fbbc05>o</font><font color=#4285f4>g</font><font color=#34a853>l</font><font color=#ea4335>e</font></font></b></td><td style="text-align: left; vertical-align: bottom; padding-bottom: 15px; width: 50%"><div style="border-bottom: 1px solid #dfdfdf;">Sorry...</div></td></tr></table></div><div style="margin-left: 4em;"><h1>We're sorry...</h1><p>... but your computer or network may be sending automated queries. To protect our users, we can't process your request right now.</p></div><div style="margin-left: 4em;">See <a href="https://support.google.com/websearch/answer/86640">Google Help</a> for more information.<br/><br/></div><div style="text-align: center; border-top: 1px solid #dfdfdf;"><a href="https://www.google.com">Google Home</a></div></body></html>""";
@@ -235,8 +237,10 @@ namespace App {
                     this.log_level=0;
                     //this.check_deleted_files ();
                     // Made some changes that does not require check_deleted_files(). Check out
+                    this.syncing_in_progress = true;
                     this.check_remote_files (this.main_path);
                     this.check_local_files (this.main_path);
+                    this.syncing_in_progress = false;
                     this.log_level=1;
                     if (this.is_syncing ()) {
                         this.log_message (_("Everything is up to date!"));
@@ -263,20 +267,23 @@ namespace App {
         public bool process_changes() {
         // TODO: TEST
             if (this.is_syncing ()) {
-                if (this.change_detected) {
-                    try {
-                        this.log_message(_("Change detected. Updating files..."));
-                        
+                try {
+                    if(localChangeDetected)
+                    {
+                        this.log_message(_("Local Change detected. Updating files..."));
                         this.check_local_files (this.main_path);
-                        this.check_remote_files (this.main_path);
-                        this.change_detected = false;
-                        this.log_message (_("Everything is up to date!"));
-                    } catch (Error e) {
-                        this.change_detected = false;
-                        this.syncing = false;
-                        this.library = null;
-                        this.log_message (_("Error found, process stoped. Error message: ") + e.message);
                     }
+                    if(remoteChangeDetected)
+                    {
+                        this.log_message(_("Remote Change detected. Updating files..."));
+                        this.check_remote_files (this.main_path);
+                    }
+
+                    this.log_message (_("Everything is up to date!"));
+                } catch (Error e) {
+                    this.syncing = false;
+                    this.library = null;
+                    this.log_message (_("Error found, process stoped. Error message: ") + e.message);
                 }
                 return true;
             }else {
@@ -345,7 +352,8 @@ namespace App {
         */
         
             if (!this.is_syncing ()) return;
-
+            //First set flag to 0 because if thread detect change it will reset to 1 whenever the sync is in progress
+            this.remoteChangeDetected = false;
             DriveFile[] res = this.list_files(-1, root_id, -1);
         
             foreach (DriveFile f in res) {
@@ -401,6 +409,8 @@ namespace App {
             */
             
             if (!this.is_syncing ()) return;
+            //First set flag to 0 because if thread detect change it will reset to 1 whenever the sync is in progress
+            this.localChangeDetected = false;
             try {
 
                 DriveFile[] res = this.list_files(-1, root_id, -1);
@@ -494,27 +504,27 @@ namespace App {
         // TODO: TEST
         // TODO: utilitzar ThreadPool?
             try {
-                string[] dirs_to_watch = this.get_all_dirs(this.main_path);
-
-                foreach (string dir_to_watch in dirs_to_watch) {
-                    new Thread<int>.try ("Watch %s thread".printf(dir_to_watch), () => {
-                        try{
+                new Thread<int>.try ("Local change Watch thread", () => {
+                    try{
+                        string[] dirs_to_watch = this.get_all_dirs(this.main_path);
+                        List<FileMonitor> listmonitor = new List<FileMonitor> ();
+                        foreach (string dir_to_watch in dirs_to_watch) {
                             File dir_to_watch_file = File.new_for_path (dir_to_watch);
                             FileMonitor monitor = dir_to_watch_file.monitor (FileMonitorFlags.WATCH_MOVES, null);
-                            monitor.changed.connect ((changed_file, other_file, event_type) => {
-                                try{
-                                    if (this.is_regular_file (changed_file.query_info ("*", FileQueryInfoFlags.NONE))) this.change_detected = true;
-                                } catch (Error e) {
-                                    this.log_message (_("Error in watching local change. Error message: ") + e.message);
-                                }
+                            listmonitor.append(monitor);
+                            monitor.changed.connect ((src, dest, event_type) => {
+                                this.localChangeDetected = true;
                             });
-                        } catch (Error e) {
-                            this.log_message (_("Error in lunching local change watching thread. Error message: ") + e.message);
                         }
-                        new MainLoop ().run ();
-                        return 1;
-                    });
-                }
+                        while (this.is_syncing ()) {
+                            Thread.usleep (this.changes_check_period*1000000);
+                        }
+                    } catch (Error e) {
+                        this.log_message (_("Error in lunching local change watching thread. Error message: ") + e.message);
+                    }
+                    new MainLoop ().run ();
+                    return 1;
+                });
             } catch (Error err) {
                 stdout.printf ("Error: %s\n", err.message);
             }
@@ -528,9 +538,13 @@ namespace App {
                     while (this.is_syncing ()) {
                         Thread.usleep (this.changes_check_period*1000000);
                         try {
-                            this.change_detected = this.check_remote_changes (this.page_token);
+                            bool have_remote_change = this.check_remote_changes (this.page_token);
+                            if(have_remote_change)
+                            {
+                                this.remoteChangeDetected = true;
+                            }
                         } catch (Error e) {
-                            this.change_detected = false;
+                            // do nothing
                         }
                     }
                     new MainLoop ().run ();
