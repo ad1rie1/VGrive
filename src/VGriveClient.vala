@@ -340,7 +340,12 @@ namespace App {
 
                 // Deleting file in remote
                 this.log_message (_("DELETE REMOTE FILE: %s").printf (filename));
-                this.delete_file(file_id);
+                try
+                {
+                    this.delete_file(file_id);
+                } catch (Error e) {
+                    this.log_message (_("Error Unable to delete remote file. Error message: ") + e.message);
+                }
             }
         }
 
@@ -354,9 +359,18 @@ namespace App {
             if (!this.is_syncing ()) return;
             //First set flag to 0 because if thread detect change it will reset to 1 whenever the sync is in progress
             this.remoteChangeDetected = false;
-            DriveFile[] res = this.list_files(-1, root_id, -1);
+            DriveFile[] res;
+            try
+            {
+                res = this.list_files(-1, root_id, -1);
+            } catch (Error e) {
+                this.log_message (_("Error Unable to retrieve remote file. Error message: ") + e.message);
+                return;
+            }
+            
         
             foreach (DriveFile f in res) {
+                //Quit if syncing stop
                 if (!this.is_syncing ()) return;
                 
                 // If file is not listed in the library, should be a new file, so sync it. Otherwise should be a deleted file, so delete it.
@@ -502,7 +516,6 @@ namespace App {
 
         private void watch_local_changes() {
         // TODO: TEST
-        // TODO: utilitzar ThreadPool?
             try {
                 new Thread<int>.try ("Local change Watch thread", () => {
                     try{
