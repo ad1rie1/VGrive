@@ -100,13 +100,15 @@ namespace App {
         public bool remoteChangeDetected = false;
         public int changes_check_period = 10;
         public Gee.HashMap<string,string>? library;
+        static Mutex mutex_local_dir_to_analyse;
+        public List<string> local_dir_to_analyse;
         public string google_error_msg = """<html><head><meta http-equiv="content-type" content="text/html; charset=utf-8"/><title>Sorry...</title><style> body { font-family: verdana, arial, sans-serif; background-color: #fff; color: #000; }</style></head><body><div><table><tr><td><b><font face=sans-serif size=10><font color=#4285f4>G</font><font color=#ea4335>o</font><font color=#fbbc05>o</font><font color=#4285f4>g</font><font color=#34a853>l</font><font color=#ea4335>e</font></font></b></td><td style="text-align: left; vertical-align: bottom; padding-bottom: 15px; width: 50%"><div style="border-bottom: 1px solid #dfdfdf;">Sorry...</div></td></tr></table></div><div style="margin-left: 4em;"><h1>We're sorry...</h1><p>... but your computer or network may be sending automated queries. To protect our users, we can't process your request right now.</p></div><div style="margin-left: 4em;">See <a href="https://support.google.com/websearch/answer/86640">Google Help</a> for more information.<br/><br/></div><div style="text-align: center; border-top: 1px solid #dfdfdf;"><a href="https://www.google.com">Google Home</a></div></body></html>""";
 
         public Thread<int> thread;
 
         public VGriveClient (AppController? controler=null, owned string? main_path=null, owned string? trash_path=null) {
             this.app_controller = controler;
-
+            local_dir_to_analyse = new List<string> ();
             if (main_path == null) {
                 main_path = Environment.get_home_dir()+"/vGrive";
             }
@@ -270,8 +272,22 @@ namespace App {
 
                 if(localChangeDetected)
                 {
-                    this.log_message(_("Local Change detected. Updating files..."));
+                    mutex_local_dir_to_analyse.lock();
+                    local_dir_to_analyse.foreach ((entry) => {
+                        string id = get_ID_by_Path(entry);
+                        if(id != "")
+                        {
+                            this.log_message(_("Local Change detected in "+entry+". Updating files..."));
+                            this.check_local_files (this.main_path,id);
+                        }
+                        else
+                        {
+                            this.log_message (_("ID not found for path :") + entry + " - Lunching full sync");
                     this.check_local_files (this.main_path);
+                        }
+                    });
+                    mutex_local_dir_to_analyse.unlock();
+                    
                 }
                 if(remoteChangeDetected)
                 {
@@ -530,7 +546,39 @@ namespace App {
                             FileMonitor monitor = dir_to_watch_file.monitor (FileMonitorFlags.WATCH_MOVES, null);
                             listmonitor.append(monitor);
                             monitor.changed.connect ((src, dest, event_type) => {
+                                string event = event_type.to_string ();
+                                if(src.get_basename () == ".vgrive_library") return;
+                                string source_path = Path.get_dirname (src.get_path ());
+                                mutex_local_dir_to_analyse.lock();
+                                if("G_FILE_MONITOR_EVENT_RENAMED" == event)
+                                {
+                                    string destition_path = Path.get_dirname (dest.get_path ());
+                                    local_dir_to_analyse.append(source_path);
+                                    local_dir_to_analyse.append(destition_path);
+                                }
+                                else if("G_FILE_MONITOR_EVENT_DELETED" == event)
+                                {
+                                    local_dir_to_analyse.append(source_path);
+                                }
+                                else if("G_FILE_MONITOR_EVENT_CREATED" == event)
+                                {
+                                    local_dir_to_analyse.append(source_path);
+                                }
+                                else if("G_FILE_MONITOR_EVENT_CHANGED" == event)
+                                {
+                                    local_dir_to_analyse.append(source_path);
+                                }
+                                mutex_local_dir_to_analyse.unlock();
+                                if (dest != null) {
+                                    print ("%s: %s, %s\n", event_type.to_string (), src.get_path (), dest.get_path ());
+                                }
+                                else
+                                {
+                                    print ("%s: %s\n", event_type.to_string (), src.get_path ());
+                                }
+                                //local_dir_to_analyse.append(TODOPATH);
                                 this.localChangeDetected = true;
+                                
                             });
                         }
                         while (this.is_syncing ()) {
@@ -1438,6 +1486,19 @@ namespace App {
 
         public Gee.HashMap<string,string>? get_library () {
             return this.library;
+        }
+
+        public string get_ID_by_Path(string path) {
+            foreach (var entry in this.library.entries) {
+                if(entry.value == path){
+                    return entry.key;
+                }
+            }
+            return "";
+        }
+
+        public string get_Path_by_ID(string id) {
+            return this.library.get (id);
         }
 
         public Gee.HashMap<string,string>? load_library() {
