@@ -369,20 +369,13 @@ namespace App {
         */
         
             if (!this.is_syncing ()) return;
-            //First set flag to 0 because if thread detect change it will reset to 1 whenever the sync is in progress
-            this.remoteChangeDetected = false;
-            DriveFile[] res;
-            try
-            {
-                res = this.list_files(-1, root_id, -1);
-            } catch (Error e) {
-                this.syncing = false;
-                this.log_message (_("Error Unable to retrieve remote file. Error message: ") + e.message);
-                return;
-            }
             
             try
             {
+                //First set flag to 0 because if thread detect change it will reset to 1 whenever the sync is in progress
+                this.remoteChangeDetected = false;
+                DriveFile[] res = this.list_files(-1, root_id, -1);
+                
                 foreach (DriveFile f in res) {
                     //Quit if syncing stop
                     if (!this.is_syncing ()) return;
@@ -416,12 +409,14 @@ namespace App {
                     } else if (this.library.has_key(f.id) && this.local_file_exists(current_path+"/"+f.name)) {
                         // Detect if the remote version is newer than the local one.
                         // If it's the case, move the local versio to .trash and download remote
-                        DriveFile extra_info_file = this.get_file_info_extra(f.id, "modifiedTime");
-                        if (this.compare_files_write_time(extra_info_file.modifiedTime, current_path+"/"+f.name) == -1) {
-                            this.log_message(_("FILE MODIFIED REMOTELY: %s updating...").printf(f.name), 0);
-                            this.download_new_version_remote_file(f, current_path);
-                            this.log_message(_("FILE MODIFIED REMOTELY: %s updated ✓").printf(f.name), 0);
-                        } else this.log_message(_("INFO: %s not changed").printf(f.name), 0);
+                        DriveFile? extra_info_file = this.get_file_info_extra(f.id, "modifiedTime");
+                        if(extra_info_file != null) {
+                            if (this.compare_files_write_time(extra_info_file.modifiedTime, current_path+"/"+f.name) == -1) {
+                                this.log_message(_("FILE MODIFIED REMOTELY: %s updating...").printf(f.name), 0);
+                                this.download_new_version_remote_file(f, current_path);
+                                this.log_message(_("FILE MODIFIED REMOTELY: %s updated ✓").printf(f.name), 0);
+                            } else this.log_message(_("INFO: %s not changed").printf(f.name), 0);
+                        }
                     } else {
                         delete_files("REMOTE", f.id, current_path);
                     }
@@ -447,7 +442,7 @@ namespace App {
             try {
 
                 DriveFile[] res = this.list_files(-1, root_id, -1);
-
+                
                 var directory = File.new_for_path (current_path);
                 bool has_in_lib = false;
                 var enumerator = directory.enumerate_children (FileAttribute.STANDARD_NAME, 0);
@@ -646,6 +641,7 @@ namespace App {
             message.set_request("", Soup.MemoryUse.COPY, "{}".data);
             session.send_message (message);
             string res = (string) message.response_body.data;
+            if (res == "" || res == null) res = "{}";
             var parser = new Json.Parser ();
             try
             {
@@ -655,7 +651,7 @@ namespace App {
             }
             Json.Object json_response = parser.get_root().get_object();
             // Check if we had an error
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 result = "Error trying to get access token: \n%s\n".printf(res);
                 stdout.printf(result);
                 DriveRequestResult aux = DriveRequestResult() {
@@ -689,7 +685,7 @@ namespace App {
                 
                 Json.Object json_response = parser.get_root().get_object();
                 // Check if we had an error
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     string result = "Error trying to get access token: \n%s\n".printf(res.message);
                     stdout.printf(result);
                     DriveRequestResult aux = DriveRequestResult() {
@@ -822,7 +818,7 @@ namespace App {
 */
 ////////////////////////////////////////////////////////////////////////////////
 
-        public ResponseObject make_request(string method, string uri, RequestParam[]? params_list=null, RequestParam[]? request_headers=null, RequestContent? request_content=null, bool without_acces_token=false) throws ErrorGoogleDriveAPI {
+        public ResponseObject? make_request(string method, string uri, RequestParam[]? params_list=null, RequestParam[]? request_headers=null, RequestContent? request_content=null, bool without_acces_token=false) throws ErrorGoogleDriveAPI {
             // Fa una petició HTTP a la API de Google Drive amb els paràmetres proporcionats
             var session = this.get_current_session();
             string uri_auth = uri;
@@ -850,6 +846,7 @@ namespace App {
                 session.send_message (message);
                 bres = message.response_body.data;
                 res = (string) message.response_body.data;
+                if(res == null) return null;
                 if (res == "") res = "{}";
                 else if (res == this.google_error_msg) {
                     throw new ErrorGoogleDriveAPI.IP_Banned(_("Google Drive Connection Error: google drive has blocked your IP, VGrive can't sync files while google drive continue blocking the IP..."));
@@ -860,7 +857,7 @@ namespace App {
                 parser.load_from_data (res, -1);
                 Json.Object json_response = parser.get_root().get_object();
                 // Check if we had an error
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error")) {
                     Json.Object error_obj = json_response.get_object_member("error");
                     // Check if it's Auth error.
                     if (error_obj.get_string_member("message") == "Invalid Credentials") {
@@ -871,6 +868,8 @@ namespace App {
                         //stdout.printf("Authentication error. Refreshing token. Request: POST %s\n", refresh_uri);
                         session.send_message (message);
                         string refresh_res = (string) message.response_body.data;
+                        if(refresh_res == null) return null;
+                        if (refresh_res == "" || refresh_res == null) refresh_res = "{}";
                         parser = new Json.Parser ();
                         parser.load_from_data (refresh_res, -1);
                         json_response = parser.get_root().get_object();
@@ -886,6 +885,7 @@ namespace App {
                             session.send_message (message);
                             bres = message.response_body.data;
                             res = (string) message.response_body.data;
+                            if(res == null) return null;
                             res_header = message.response_headers;
                             return {res_header, res, bres};
                         } else {
@@ -898,13 +898,18 @@ namespace App {
                         return {res_header, res, bres};
                     }
                 }
+                else
+                {
+                    return {res_header, res, bres};
+                }
             }
             catch (ErrorGoogleDriveAPI e) {
                 throw e;
             } catch (Error e) {
-                if (res == null || res == "") res = e.message;
+                this.log_message (_("Error message: ") + e.message);
+                return null;
             }
-            return {res_header, res, bres};
+            
         }
 
         public DriveFile[] list_files(int number, string parent_id, int trashed) throws ErrorGoogleDriveAPI {
@@ -932,7 +937,15 @@ namespace App {
             else if (trashed > 0) q = q.concat(" and trashed = True");
             params[1] = {"q", q};
             params[2] = {"fields", "files/id, files/name, files/mimeType, files/modifiedTime"};
-            string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
+            ResponseObject? request = this.make_request("GET", this.api_uri+"/files", params, null, null, false);
+            
+            if(request == null)
+            {
+                this.syncing = false;
+                this.log_message (_("Error on retrieve files, please check your internet connection"));
+                return new DriveFile[0];
+            }
+            string res = request.response;
             
             var parser = new Json.Parser ();
             try
@@ -942,7 +955,7 @@ namespace App {
                 this.log_message (_("Error found on get remote dir info. Error message: ") + e.message);
             }
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 stdout.printf("%s\n", res);
                 return new DriveFile[0];
             }
@@ -968,13 +981,21 @@ namespace App {
                 if (nfiles == results.length) results.resize(results.length*2);
             }
 
-            bool files_left = json_response.get_member("nextPageToken") != null && (number < 0 || nfiles < number);
+            bool files_left = json_response.has_member("nextPageToken")  && (number < 0 || nfiles < number);
             RequestParam[] params2 = new RequestParam[3];
             while (files_left) {
                 params2[0] = params[0];
                 params2[1] = params[1];
                 params2[2] = {"pageToken", json_response.get_string_member("nextPageToken")};
-                res = this.make_request("GET", this.api_uri+"/files", params2, null, null, false).response;
+                request = this.make_request("GET", this.api_uri+"/files", params2, null, null, false);
+                
+                if(request == null)
+                {
+                    this.syncing = false;
+                    this.log_message (_("Error on retrieve files, please check your internet connection"));
+                    return new DriveFile[0];
+                }
+                res = request.response;
                 try
                 {
                     parser.load_from_data (res, -1);
@@ -982,7 +1003,7 @@ namespace App {
                     this.log_message (_("Error found on get remote dir info. Error message: ") + e.message);
                 }
                 json_response = parser.get_root().get_object();
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     stdout.printf("%s\n", res);
                     return results[0:nfiles];
                 }
@@ -1004,11 +1025,10 @@ namespace App {
                     nfiles += 1;
                     if (nfiles == results.length) results.resize(results.length*2);
                 }
-                files_left = json_response.get_member("nextPageToken") != null && (number < 0 || nfiles < number);
+                files_left = json_response.has_member("nextPageToken")  && (number < 0 || nfiles < number);
             }
 
             if (number > -1 && nfiles > number) nfiles = number;
-
             return results[0:nfiles];
         }
 
@@ -1054,7 +1074,7 @@ namespace App {
                 var parser = new Json.Parser ();
                 parser.load_from_data (res2.response, -1);
                 Json.Object json_response = parser.get_root().get_object();
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     stdout.printf("%s\n", res2.response);
                     return {};
                 }
@@ -1117,7 +1137,7 @@ namespace App {
                 var parser = new Json.Parser ();
                 parser.load_from_data (res2.response, -1);
                 Json.Object json_response = parser.get_root().get_object();
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     stdout.printf("%s\n", res2.response);
                     return {};
                 }
@@ -1166,7 +1186,7 @@ namespace App {
             }
             
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 stdout.printf("%s\n", res2.response);
                 return {};
             }
@@ -1197,7 +1217,7 @@ namespace App {
                 return new DriveFile[0];
             }
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 stdout.printf("%s\n%s\n", res, q);
                 return new DriveFile[0];
             }
@@ -1223,7 +1243,7 @@ namespace App {
                 if (nfiles == results.length) results.resize(results.length*2);
             }
 
-            bool files_left = json_response.get_member("nextPageToken") != null;
+            bool files_left = json_response.has_member("nextPageToken") ;
             params = new RequestParam[2];
             while (files_left) {
                 params[0] = {"q", q};
@@ -1236,7 +1256,7 @@ namespace App {
                     return results[0:nfiles];
                 }
                 json_response = parser.get_root().get_object();
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     stdout.printf("%s\n", res);
                     return results[0:nfiles];
                 }
@@ -1258,7 +1278,7 @@ namespace App {
                     nfiles += 1;
                     if (nfiles == results.length) results.resize(results.length*2);
                 }
-                files_left = json_response.get_member("nextPageToken") != null;
+                files_left = json_response.has_member("nextPageToken") ;
             }
             return results[0:nfiles];
         }
@@ -1266,7 +1286,9 @@ namespace App {
         public uint8[] get_file_content(string file_id) throws ErrorGoogleDriveAPI {
             RequestParam[] params = new RequestParam[1];
             params[0] = {"alt", "media"};
-            return this.make_request("GET", this.api_uri+"/files/"+file_id, params, null, null, false).bresponse;
+            ResponseObject? request = this.make_request("GET", this.api_uri+"/files/"+file_id, params, null, null, false);
+            if(request == null) return new uint8[0];
+            return request.bresponse;
         }
 
         public bool is_google_doc(string file_id) throws ErrorGoogleDriveAPI {
@@ -1279,7 +1301,7 @@ namespace App {
             return mimeType.has_prefix ("application/") && mimeType.contains("google-apps") && mimeType != "application/vnd.google-apps.folder";
         }
 
-        public DriveFile get_file_info(string name, string parent_id="", int trashed=-1) throws ErrorGoogleDriveAPI {
+        public DriveFile? get_file_info(string name, string parent_id="", int trashed=-1) throws ErrorGoogleDriveAPI {
             RequestParam[] params = new RequestParam[1];
 
             string q = "";
@@ -1291,6 +1313,7 @@ namespace App {
             params[0] = {"q", q};
 
             string res = this.make_request("GET", this.api_uri+"/files", params, null, null, false).response;
+            if(res == null) return null;
             var parser = new Json.Parser ();
             try
             {
@@ -1299,7 +1322,7 @@ namespace App {
                 this.log_message (_("Error found on get remote file info. Error message: ") + e.message);
             }
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 stdout.printf("%s\n", res);
                 return {};
             }
@@ -1324,10 +1347,12 @@ namespace App {
             return result;
         }
 
-        public DriveFile get_file_info_extra(string file_id, string fields) throws ErrorGoogleDriveAPI {
+        public DriveFile? get_file_info_extra(string file_id, string fields) throws ErrorGoogleDriveAPI {
             RequestParam[] params = new RequestParam[1];
             params[0] = {"fields", fields};
-            string res = this.make_request("GET", this.api_uri+"/files/"+file_id, params, null, null, false).response;
+            ResponseObject? request = this.make_request("GET", this.api_uri+"/files/"+file_id, params, null, null, false);
+            if(request == null) return null;
+            string res = request.response;
             var parser = new Json.Parser ();
             try
             {
@@ -1336,7 +1361,7 @@ namespace App {
                 this.log_message (_("Error found on get remote file info. Error message: ") + e.message);
             }
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 // Si tenim només un error, l'error es de tipus 400 i el problema està en el camp "fields", retornarem un DriveFile amb els camps buits i ja està
                 if (json_response.get_object_member ("error").has_member ("errors") && json_response.get_object_member ("error").has_member ("code") && json_response.get_object_member ("error").get_int_member ("code") == 400) {
                     Json.Array errors = json_response.get_object_member ("error").get_array_member ("errors");
@@ -1415,6 +1440,7 @@ namespace App {
         }
 
         public string request_page_token() throws ErrorGoogleDriveAPI {  // TODO
+
             string res = this.make_request("GET", this.api_uri+"/changes/startPageToken", null, null, null, false).response;
             var parser = new Json.Parser ();
             try
@@ -1431,7 +1457,10 @@ namespace App {
             string original_pageToken = pageToken;
             RequestParam[] params = new RequestParam[1];
             params[0] = {"pageToken", pageToken};
-            string res = this.make_request("GET", this.api_uri+"/changes", params, null, null, false).response;
+            ResponseObject? request =this.make_request("GET", this.api_uri+"/changes", params, null, null, false);
+            if(request == null) return false;
+            
+            string res = request.response;
             var parser = new Json.Parser ();
             try
             {
@@ -1440,7 +1469,7 @@ namespace App {
                 this.log_message (_("Fail to parse data from remote change request. Error message: ") + e.message);
             }
             Json.Object json_response = parser.get_root().get_object();
-            if (json_response.get_member("error") != null) {
+            if (json_response.has_member("error") ) {
                 stdout.printf("%s\n", res);
                 return false;
             }
@@ -1452,10 +1481,12 @@ namespace App {
             string nextToken = "";
             if (json_response.get_member("newStartPageToken") != null) nextToken = json_response.get_string_member("newStartPageToken");
 
-            bool changes_left = json_response.get_member("nextPageToken") != null;
+            bool changes_left = json_response.has_member("nextPageToken") ;
             while (changes_left) {
                 params[0] = {"pageToken", json_response.get_string_member("nextPageToken")};
-                res = this.make_request("GET", this.api_uri+"/changes", params, null, null, false).response;
+                request =this.make_request("GET", this.api_uri+"/changes", params, null, null, false);
+                if(request == null) return false;
+                res = request.response;
                 try
                 {
                     parser.load_from_data (res, -1);
@@ -1463,12 +1494,12 @@ namespace App {
                     this.log_message (_("Fail to parse data from remote change request. Error message: ") + e.message);
                 }
                 json_response = parser.get_root().get_object();
-                if (json_response.get_member("error") != null) {
+                if (json_response.has_member("error") ) {
                     stdout.printf("%s\n", res);
                     return false;
                 }
                 if (json_response.get_member("newStartPageToken") != null) nextToken = json_response.get_string_member("newStartPageToken");
-                changes_left = json_response.get_member("nextPageToken") != null;
+                changes_left = json_response.has_member("nextPageToken") ;
             }
             this.page_token = this.request_page_token ();
 
@@ -1751,6 +1782,9 @@ namespace App {
             */
             try
             {
+                // If wrong input data, no action
+                if(dfile_write_date == null || filepath == null ) return 0; 
+
                 File lfile = File.new_for_path(filepath);
                 FileInfo fileinfo = lfile.query_info ("*", FileQueryInfoFlags.NONE);
                 DateTime lfile_wdate = fileinfo.get_modification_date_time();
